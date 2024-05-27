@@ -1,0 +1,310 @@
+---
+title: "Ultimate output data"
+author: "Zeyu Lou"
+date: "2024-05-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 0. Data preparation
+
+## 0.1 Loading package
+
+```{r packages}
+library('haven')
+library('xml2')
+library('foreign')
+library(tidyverse)
+library(tidycensus)
+library(ipumsr)
+library(censusapi)
+library(lehdr)
+library(tidyUSDA)
+library(flextable)
+library(tigris)
+library(sf)
+library(dplyr)
+library(stringr)
+library(Hmisc)
+```
+
+## 0.2 Scan the data
+
+```{r loading data}
+example_data <- read_dta("../data/example_data.dta")
+# xml_file <- read_xml("../data/BBS_data/North American Breeding Bird Survey Dataset (1966-2022).xml")
+routes <- read.csv("../data/BBS_data/routes.csv")
+# Migrant <- read.csv("../data/BBS_data/MigrantNonBreeder/Migrants.csv")
+MigrantSummary <- read.csv("../data/BBS_data/MigrantNonBreeder/MigrantSummary.csv")
+VehicleData <- read.csv("../data/BBS_data/VehicleData.csv")
+weather <- read.csv("../data/BBS_data/weather.csv")
+ref <- read.dbf("/Users/louzeyu/Downloads/gz_2010_us_050_00_500k.dbf")
+```
+
+```{r api}
+# census_api_key("457e74535811f68ac33753e2d9107cb373e935d4", install = TRUE)
+```
+
+# 1. MigrantNonBreeder Data
+
+## 1.1 routes_us
+
+```{r routes_us}
+# CountryNum: 124=Canada, 840=United_States, so we filtered out the Canada in our data and create new df routes_us.
+routes_us <- routes %>%
+  filter(CountryNum == 840) %>%
+  mutate(
+    StateNum_str = str_pad(StateNum, width = 2, pad = "0"),
+    Route_str = str_pad(Route, width = 3, pad = "0"),
+    StateNum_Route = paste0(StateNum_str, Route_str)
+  ) %>%
+  select(-StateNum_str, -Route_str)
+
+counties <- counties(cb = TRUE, resolution = "5m")
+counties <- st_transform(counties, crs = 4326)
+
+# Convert Latitude and Longitude to sf objects
+points <- st_as_sf(routes_us, coords = c("Longitude", "Latitude"), crs = 4326)
+# Perform spatial join to find the county where each point is located
+joined <- st_join(points, counties, join = st_within)
+# Extract STATEFP and COUNTYFP and merge them into FIPS code
+routes_us <- routes_us %>%
+  mutate(fips = joined$GEOID)
+routes_us
+
+rm(joined)
+rm(points)
+```
+
+## 1.2 MigrantSummary_us
+
+We need Abundance and Richness from MigrantSummary_us
+
+- Abundance: total number of individual birds observed (regardless of species)
+
+- Richness: total number of different bird species observed 
+
+```{r MigrantSummary_us}
+# Merge StateNum and Route into a single variable called StateNum_Route, so we can link this dataset with other datasets.
+MigrantSummary_us <- MigrantSummary %>%
+  filter(CountryNum == 840) %>%
+  mutate(
+    StateNum_str = str_pad(StateNum, width = 2, pad = "0"),
+    Route_str = str_pad(Route, width = 3, pad = "0"),
+    StateNum_Route = paste0(StateNum_str, Route_str)
+  ) %>%
+  select(-StateNum_str, -Route_str)
+
+rm(MigrantSummary)
+
+MigrantSummary_us <- MigrantSummary_us %>%
+  left_join(routes_us %>% select(StateNum_Route, fips), by = "StateNum_Route")
+```
+
+Create a new dataset "county_x_year_panel_data.1" based on MigrantSummary_us
+
+```{r}
+county_x_year_panel_data.1 <- MigrantSummary_us %>%
+  group_by(fips, Year) %>%
+  summarise(
+    abundance = sum(StopTotal),
+    richness = sum(SpeciesTotal)
+  )
+```
+
+
+Then we need to build another df about no_routes based on MigrantSummary_us
+
+- no_routes: Number of surveying routes in the FIPS county
+
+```{r no_routes}
+no_routes <- routes_us %>%
+  group_by(fips) %>%
+  summarise(no_routes = n_distinct(StateNum_Route)) %>%
+  ungroup()
+
+county_x_year_panel_data.1 <- county_x_year_panel_data.1 %>%
+  left_join(no_routes, by = c("fips" = "fips"))
+```
+
+
+# 2. States
+
+## 2.1 Alabama-1
+
+df: county_x_year_panel_data.01
+
+```{r alabama}
+# Loading data
+alabama <- read.csv("../data/BBS_data/States/Alabama.csv")
+
+# Find the fips for each route
+alabama <- alabama %>%
+  mutate(
+    StateNum_str = str_pad(StateNum, width = 2, pad = "0"),
+    Route_str = str_pad(Route, width = 3, pad = "0"),
+    StateNum_Route = paste0(StateNum_str, Route_str)
+  ) %>%
+  select(-StateNum_str, -Route_str)
+
+alabama <- alabama %>%
+  left_join(routes_us %>% select(StateNum_Route, fips), by = "StateNum_Route")
+
+county_x_year_panel_data.01 <- alabama %>%
+  group_by(fips, Year) %>%
+  summarise(
+    abundance = sum(StopTotal),
+    richness = sum(SpeciesTotal),
+    no_routes = n_distinct(StateNum_Route)
+  )
+
+```
+
+## 2.2 Loop
+
+```{r colorado}
+process_file <- function(file_path, routes_us, no_routes) {
+  data <- read.csv(file_path)
+  
+  if (all(data$CountryNum == 840)) {
+    data <- data %>%
+      mutate(
+        StateNum_str = str_pad(StateNum, width = 2, pad = "0"),
+        Route_str = str_pad(Route, width = 3, pad = "0"),
+        StateNum_Route = paste0(StateNum_str, Route_str)
+      ) %>%
+      select(-StateNum_str, -Route_str)
+    
+    data <- data %>%
+      left_join(routes_us %>% select(StateNum_Route, fips), by = "StateNum_Route")
+    
+    result <- data %>%
+      group_by(fips, Year) %>%
+      summarise(
+        abundance = sum(StopTotal),
+        richness = sum(SpeciesTotal),
+        no_routes = n_distinct(StateNum_Route)
+      )
+    
+    return(result)
+  } else {
+    return(NULL)
+  }
+}
+
+files<-list.files("../data/BBS_data/States", full.names = TRUE)
+
+results <- list()
+
+# 遍历每个文件
+for (file in files) {
+  file_result <- process_file(file, routes_us, no_routes)
+  if (!is.null(file_result)) {
+    state_name <- tools::file_path_sans_ext(basename(file))
+    assign(paste0("county_x_year_panel_data_", state_name), file_result)
+    results[[state_name]] <- file_result
+  }
+}
+
+# 将所有结果合并成一个数据框
+county_x_year_panel_data.state <- bind_rows(results)
+
+write.csv(county_x_year_panel_data.state, "../data/county_x_year_panel_data.state.csv", row.names = FALSE)
+```
+
+# 3. weather
+
+- duration_minutes: Survey duration (minutes)
+
+  - EndTime - StartTime, and set Null as 0
+
+```{r weather_us}
+# Build weather_us data and add fips
+weather_us <- weather %>%
+  filter(CountryNum == 840) %>%
+  mutate(
+    StateNum_str = str_pad(StateNum, width = 2, pad = '0'),
+    Route_str = str_pad(Route, width = 3, pad = '0'),
+    StateNum_Route = paste0(StateNum_str, Route_str)
+  ) %>%
+  select(-StateNum_str, -Route_str) %>%
+  left_join(routes_us %>% select(StateNum_Route, fips), by = "StateNum_Route")
+
+# Find the duration_minutes
+time_to_minutes <- function(time) {
+  hours <- time %/% 100
+  minutes <- time %% 100
+  return(hours * 60 + minutes)
+}
+
+weather_us <- weather_us %>%
+  mutate(
+    EndTime_minutes = time_to_minutes(EndTime),
+    StartTime_minutes = time_to_minutes(StartTime),
+    duration_minutes = EndTime_minutes - StartTime_minutes
+  ) %>%
+  select(-EndTime_minutes, -StartTime_minutes)
+
+# Modify it as weather_us_summary by Year and fips.
+weather_us_summary <- weather_us %>%
+  group_by(Year, fips) %>%
+  summarise(
+    duration_minutes = sum(duration_minutes, na.rm = TRUE),
+    obsn = sum(ObsN, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# Add weather_us_summary to the main dataset
+county_x_year_panel_data <- county_x_year_panel_data.state %>%
+  left_join(weather_us_summary, by = c("Year", "fips"))
+```
+
+# 4. VehicleData
+
+```{r VehicleData_us}
+# Build weather_us data and add fips
+VehicleData_us <- VehicleData %>%
+  filter(CountryNum == 840) %>%
+  mutate(
+    StateNum_str = str_pad(StateNum, width = 2, pad = '0'),
+    Route_str = str_pad(Route, width = 3, pad = '0'),
+    StateNum_Route = paste0(StateNum_str, Route_str)
+  ) %>%
+  select(-StateNum_str, -Route_str) %>%
+  left_join(routes_us %>% select(StateNum_Route, fips), by = "StateNum_Route")
+
+# Sum the car_total and noise_total
+VehicleData_us_summary <- VehicleData_us %>%
+  mutate(car_total = rowSums(select(., starts_with("Car"))),
+         noise_total = rowSums(select(., starts_with("Noise")))
+         ) %>%
+  group_by(Year, fips) %>%
+  summarise(
+    car_total = sum(car_total, na.rm = TRUE),
+    noise_total = sum(noise_total, na.rm = TRUE)
+  )
+
+county_x_year_panel_data <- county_x_year_panel_data %>%
+  left_join(VehicleData_us_summary, by = c("Year", "fips")) %>%
+  rename(year = Year)
+```
+
+# 5. Label and save the data
+
+```{r label}
+label(county_x_year_panel_data$fips) <- "GEOID"
+label(county_x_year_panel_data$year) <- "Year"
+label(county_x_year_panel_data$richness) <- "richness, countyXyear level"
+label(county_x_year_panel_data$no_routes) <- "Number of routes in the given fips"
+label(county_x_year_panel_data$duration_minutes) <- "Survey duration, in minutes"
+label(county_x_year_panel_data$obsn) <- "Number of person conducted the survey"
+label(county_x_year_panel_data$car_total) <- "Number of cars passing during the survey"
+label(county_x_year_panel_data$noise_total) <- "Number of stops (out of 50) on a survey route that have excessive noise during t"
+label(county_x_year_panel_data$abundance) <- "abundance"
+
+write.csv(county_x_year_panel_data, "../data/county_x_year_panel_data.csv", row.names = FALSE)
+```
+

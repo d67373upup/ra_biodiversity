@@ -1,0 +1,113 @@
+---
+title: "FIPS code matching"
+author: "Zeyu Lou"
+date: "2024-05-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+library(readxl)
+library(openxlsx)
+library(foreign)
+library(dplyr)
+library(stringr)
+```
+
+# 0 Data preparation
+
+First, I manually code the state_id in 'MDP_1980_2008.xlsx'
+
+Import df('MDP_1980_2008.xlsx') as dataframe
+Import ref('gz_2010_us_050_00_500k.dbf') as the reference list for data linkage
+
+```{r import data}
+df <- read_xlsx("../data/MDP_1980_2008.xlsx", sheet=2)
+ref <- read.dbf("../data/shp_county_2010/gz_2010_us_050_00_500k.dbf")
+```
+
+# 1 Data cleaning
+## 1.1 Clean df
+```{r clean df}
+sum(is.na(df$County))
+df.1 <- df %>%
+  mutate(County = str_to_lower(County)) %>%
+  mutate(County = str_replace_all(County, " ", "")) %>%
+  mutate(County = str_replace_all(County, "county", "")) %>%
+  mutate(County = str_replace_all(County, "city", "")) %>%
+  mutate(County = str_replace_all(County, "parish", ""))
+```
+
+We have five NAs in the County column in total, which are Bay St. Louis (city), Richmond (State: VA), and Washington D.C. I located them by hand using Google. However, I assume Bay St. Louis (city) might belong to Hancock County in Mississippi instead of MO as indicated by MDP_1980_2008.xlsx originally. It might be a typo, I guess. Therefore, I will change it to 'MS' and proceed with the linkage.
+
+*For number 107, the county contains three options. Does this indicate that one company has three locations? Should we create three FIPS codes for one company?*
+
+## 1.2 Clean ref
+
+```{r clean ref}
+sum(is.na(ref$NAME))
+ref.1 <- ref %>%
+  mutate(NAME = str_to_lower(NAME)) %>%
+  mutate(NAME = str_replace_all(NAME, " ", "")) %>%
+  mutate(NAME = str_replace_all(NAME, "county", ""))
+```
+
+# 2 Join data
+
+```{r linkage}
+# Make 'state_id' as factor with two digit
+df.1 <- df.1 %>%
+  mutate(state_id = str_pad(as.character(state_id), width = 2, pad = "0")) %>%
+  mutate(state_id = as.factor(state_id))
+
+df.1 <- df.1 %>%
+  left_join(ref.1 %>% select(STATE, NAME, COUNTY, GEO_ID, lat, lon), by = c("state_id" = "STATE", "County" = "NAME"))
+
+# check NAs
+sum(is.na(df.1$COUNTY))
+na_rows <- which(is.na(df.1$COUNTY))
+na_rows
+
+# Create fips_id
+df.1 <- df.1 %>%
+  mutate(fips_id = paste0(state_id, COUNTY))
+
+head(df.1$fips_id)
+
+# export the data
+write.xlsx(df.1, '../zeyu_data/MDP_1980_2008_updated.xlsx')
+```
+
+# 3 Create the map.
+
+```{r map package}
+library(sf)
+library(tmap)
+library(ggplot2)
+library(leaflet)
+library(maps)
+```
+
+```{r map}
+shapefile_path <- "../data/shp_county_2010/gz_2010_us_050_00_500k.shp"
+geo_data <- st_read(shapefile_path)
+
+# create the map
+map("state", fill = FALSE, col = "black", bg = "white", lwd = 1.5)
+text(state.center$x, state.center$y, labels = state.abb, cex = 0.7)
+
+for (i in 1:nrow(df.1)) {
+  if (df.1$Winner[i] == 1) {
+    points(df.1$lon[i], df.1$lat[i], col = "blue", pch = 1, cex = 2, lwd = 2)
+  } else {
+    symbols(df.1$lon[i], df.1$lat[i], circles = rep(1, nrow(df.1))[i], inches = 0.1,
+            add = TRUE, fg = "red", lty = 2)
+  }
+}
+```
+
+
+
