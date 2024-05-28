@@ -1,0 +1,126 @@
+---
+title: "Summary stats"
+author: "Zeyu Lou"
+date: "2024-05-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+library('foreign')
+library('haven')
+library(dplyr)
+library(ggplot2)
+```
+
+
+# Import data
+```{r import}
+example_data <- read_dta("../data/example_data.dta")
+county_x_year_panel_data <- read.csv("../data/county_x_year_panel_data.csv")
+alabama <- read.csv("../data/BBS_data/states/Alabama.csv")
+# fifty1 <- read.csv("../data/BBS_data/50-StopData/fifty1.csv")
+```
+
+# Summary the data by year
+
+```{r yearly data}
+vars <- c("abundance", "richness", "no_routes", "duration_minutes", "obsn", "car_total", "noise_total")
+
+example_data_yr <- example_data %>%
+  group_by(year) %>%
+  summarise(across(all_of(vars), mean, na.rm=TRUE))
+
+panel_data_yr <- county_x_year_panel_data %>%
+  group_by(year) %>%
+  summarise(across(all_of(vars), mean, na.rm=TRUE))
+```
+
+# Plot the graphs
+
+## abundance
+```{r abundance}
+ggplot() +
+  geom_line(data = example_data_yr, aes(x = year, y = abundance, color = "example_data")) +
+  geom_line(data = panel_data_yr, aes(x = year, y = abundance, color = "county_x_year_panel_data")) +
+  labs(title = "Yearly Trends of Abundance",
+       x = "Year",
+       y = "Mean Abundance",
+       color = "Dataset") +
+  theme_minimal()
+```
+
+## richness
+```{r richness}
+ggplot() +
+  geom_line(data = example_data_yr, aes(x = year, y = richness, color = "example_data")) +
+  geom_line(data = panel_data_yr, aes(x = year, y = richness, color = "county_x_year_panel_data")) +
+  labs(title = "Yearly Trends of Richness",
+       x = "Year",
+       y = "Mean Richness",
+       color = "Dataset") +
+  theme_minimal()
+```
+
+## no_routes
+```{r no_routes}
+ggplot() +
+  geom_line(data = example_data_yr, aes(x = year, y = no_routes, color = "example_data")) +
+  geom_line(data = panel_data_yr, aes(x = year, y = no_routes, color = "county_x_year_panel_data")) +
+  labs(title = "Yearly Trends of no_routes",
+       x = "Year",
+       y = "Mean no_routes",
+       color = "Dataset") +
+  theme_minimal()
+```
+
+## duration_minutes
+```{r duration_minutes}
+ggplot() +
+  geom_line(data = example_data_yr, aes(x = year, y = duration_minutes, color = "example_data")) +
+  geom_line(data = panel_data_yr, aes(x = year, y = duration_minutes, color = "county_x_year_panel_data")) +
+  labs(title = "Yearly Trends of duration_minutes",
+       x = "Year",
+       y = "Mean duration_minutes",
+       color = "Dataset") +
+  theme_minimal()
+```
+
+## obsn
+```{r obsn}
+ggplot() +
+  geom_line(data = example_data_yr, aes(x = year, y = obsn, color = "example_data")) +
+  geom_line(data = panel_data_yr, aes(x = year, y = obsn, color = "county_x_year_panel_data")) +
+  labs(title = "Yearly Trends of obsn",
+       x = "Year",
+       y = "Mean obsn",
+       color = "Dataset") +
+  theme_minimal()
+```
+
+## car_total
+```{r car_total}
+ggplot() +
+  geom_line(data = example_data_yr, aes(x = year, y = car_total, color = "example_data")) +
+  geom_line(data = panel_data_yr, aes(x = year, y = car_total, color = "county_x_year_panel_data")) +
+  labs(title = "Yearly Trends of car_total",
+       x = "Year",
+       y = "Mean car_total",
+       color = "Dataset") +
+  theme_minimal()
+```
+
+## noise_total
+```{r noise_total}
+ggplot() +
+  geom_line(data = example_data_yr, aes(x = year, y = noise_total, color = "example_data")) +
+  geom_line(data = panel_data_yr, aes(x = year, y = noise_total, color = "county_x_year_panel_data")) +
+  labs(title = "Yearly Trends of noise_total",
+       x = "Year",
+       y = "Mean noise_total",
+       color = "Dataset") +
+  theme_minimal()
+```

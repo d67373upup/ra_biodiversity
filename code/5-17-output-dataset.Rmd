@@ -41,7 +41,7 @@ routes <- read.csv("../data/BBS_data/routes.csv")
 MigrantSummary <- read.csv("../data/BBS_data/MigrantNonBreeder/MigrantSummary.csv")
 VehicleData <- read.csv("../data/BBS_data/VehicleData.csv")
 weather <- read.csv("../data/BBS_data/weather.csv")
-ref <- read.dbf("/Users/louzeyu/Downloads/gz_2010_us_050_00_500k.dbf")
+ref <- read.dbf("../data/shp_county_2010/gz_2010_us_050_00_500k.dbf")
 ```
 
 ```{r api}
@@ -156,8 +156,8 @@ alabama <- alabama %>%
 county_x_year_panel_data.01 <- alabama %>%
   group_by(fips, Year) %>%
   summarise(
-    abundance = sum(StopTotal),
-    richness = sum(SpeciesTotal),
+    abundance = sum(SpeciesTotal),
+    richness = n_distinct(AOU),
     no_routes = n_distinct(StateNum_Route)
   )
 
@@ -184,8 +184,8 @@ process_file <- function(file_path, routes_us, no_routes) {
     result <- data %>%
       group_by(fips, Year) %>%
       summarise(
-        abundance = sum(StopTotal),
-        richness = sum(SpeciesTotal),
+        abundance = sum(SpeciesTotal),
+        richness = n_distinct(AOU),
         no_routes = n_distinct(StateNum_Route)
       )
     
