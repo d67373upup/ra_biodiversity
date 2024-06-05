@@ -32,11 +32,11 @@ vars <- c("abundance", "richness", "no_routes", "duration_minutes", "obsn", "car
 
 example_data_yr <- example_data %>%
   group_by(year) %>%
-  summarise(across(all_of(vars), mean, na.rm=TRUE))
+  summarise(across(all_of(vars), sum, na.rm=TRUE))
 
 panel_data_yr <- county_x_year_panel_data %>%
   group_by(year) %>%
-  summarise(across(all_of(vars), mean, na.rm=TRUE))
+  summarise(across(all_of(vars), sum, na.rm=TRUE))
 ```
 
 # Plot the graphs
@@ -48,7 +48,7 @@ ggplot() +
   geom_line(data = panel_data_yr, aes(x = year, y = abundance, color = "county_x_year_panel_data")) +
   labs(title = "Yearly Trends of Abundance",
        x = "Year",
-       y = "Mean Abundance",
+       y = "Abundance",
        color = "Dataset") +
   theme_minimal()
 ```
@@ -60,7 +60,7 @@ ggplot() +
   geom_line(data = panel_data_yr, aes(x = year, y = richness, color = "county_x_year_panel_data")) +
   labs(title = "Yearly Trends of Richness",
        x = "Year",
-       y = "Mean Richness",
+       y = "Richness",
        color = "Dataset") +
   theme_minimal()
 ```
@@ -72,7 +72,7 @@ ggplot() +
   geom_line(data = panel_data_yr, aes(x = year, y = no_routes, color = "county_x_year_panel_data")) +
   labs(title = "Yearly Trends of no_routes",
        x = "Year",
-       y = "Mean no_routes",
+       y = "no_routes",
        color = "Dataset") +
   theme_minimal()
 ```
@@ -84,7 +84,7 @@ ggplot() +
   geom_line(data = panel_data_yr, aes(x = year, y = duration_minutes, color = "county_x_year_panel_data")) +
   labs(title = "Yearly Trends of duration_minutes",
        x = "Year",
-       y = "Mean duration_minutes",
+       y = "duration_minutes",
        color = "Dataset") +
   theme_minimal()
 ```
@@ -96,7 +96,7 @@ ggplot() +
   geom_line(data = panel_data_yr, aes(x = year, y = obsn, color = "county_x_year_panel_data")) +
   labs(title = "Yearly Trends of obsn",
        x = "Year",
-       y = "Mean obsn",
+       y = "obsn",
        color = "Dataset") +
   theme_minimal()
 ```
@@ -108,7 +108,7 @@ ggplot() +
   geom_line(data = panel_data_yr, aes(x = year, y = car_total, color = "county_x_year_panel_data")) +
   labs(title = "Yearly Trends of car_total",
        x = "Year",
-       y = "Mean car_total",
+       y = "car_total",
        color = "Dataset") +
   theme_minimal()
 ```
@@ -120,7 +120,7 @@ ggplot() +
   geom_line(data = panel_data_yr, aes(x = year, y = noise_total, color = "county_x_year_panel_data")) +
   labs(title = "Yearly Trends of noise_total",
        x = "Year",
-       y = "Mean noise_total",
+       y = "noise_total",
        color = "Dataset") +
   theme_minimal()
 ```

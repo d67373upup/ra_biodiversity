@@ -51,5 +51,6 @@ rsconnect/
 # Mac file
 .DS_Store
 
-# Ignore data folder
+# Ignore folders
 data/
+readings/
