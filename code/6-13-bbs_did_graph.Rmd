@@ -1,0 +1,177 @@
+---
+title: "6-13-bbs_did_graph"
+author: "Zeyu Lou"
+date: "2024-06-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+rm(list=ls())
+
+library('foreign')
+library('haven')
+library(readxl)
+library(dplyr)
+library(ggplot2)
+```
+
+## 1. bird biodiversity did
+
+#### 1.0 Import data
+```{r import}
+mdp_data <- read_xlsx("../output_data/MDP_1980_2008_updated.xlsx")
+county_x_year_panel_data <- read.csv("../output_data//county_x_year_panel_data.csv")
+```
+
+#### 1.1 merge the data
+```{r merge}
+# format fips as integer in both dataset
+mdp_data <- mdp_data %>%
+  mutate(fips = as.integer(fips),
+         plant_id = paste0(Number, Winner, fips, `City (If available)`)) # create a unique id for different plants
+
+# merge the dataset if they have the same fips
+merged_data <- county_x_year_panel_data %>%
+  left_join(mdp_data, by = "fips")
+
+# Since the publication year has no missing values, we want to delete the data that does not have a corresponding FIPS code.
+mdp_data_year <- merged_data %>%
+  filter(!is.na(`Publication Year`))
+
+n_distinct(mdp_data_year$plant_id) # 199
+n_distinct(mdp_data$plant_id) # 310. we miss almost half of our data, since we do not have corresponding fips from panel data. US has 3,242 fips in total and we have 2013 fips in our data.
+```
+
+#### 1.2 filter the years
+
+```{r}
+# 我认为我后续需要手动给na的county手动加入fips（在mdp_data中）。我们一共有7个na
+mdp_data_10yr <- mdp_data_year %>%
+  mutate(`Publication Year` = as.integer(`Publication Year`),
+         year = as.integer(year),
+         year_diff = year - `Publication Year`) %>%
+  filter(year_diff >= -4 & year_diff <= 5)
+
+n_distinct(mdp_data_10yr$plant_id) # 172
+table(mdp_data_10yr$Winner) # 0:873; 1:618
+```
+
+#### 1.3 did plots
+
+```{r}
+mdp_data_10yr <- mdp_data_10yr %>%
+  mutate(log_abundance = log(abundance),
+         log_richness = log(richness))
+
+bird_abundance_did <- ggplot(mdp_data_10yr, aes(x = year_diff, y = log_abundance, color = as.factor(Winner))) +
+  geom_line(stat = "summary", fun = mean) +
+  labs(title = "Log Abundance over Time",
+       x = "Year Difference",
+       y = "Log Abundance",
+       color = "Winner") +
+  scale_x_continuous(breaks = seq(-4, 5, by = 1))+
+  theme_minimal()
+
+bird_richness_did <- ggplot(mdp_data_10yr, aes(x = year_diff, y = log_richness, color = as.factor(Winner))) +
+  geom_line(stat = "summary", fun = mean) +
+  labs(title = "Log Richness over Time",
+       x = "Year Difference",
+       y = "Log Richness",
+       color = "Winner") +
+  scale_x_continuous(breaks = seq(-4, 5, by = 1))+
+  theme_minimal()
+
+bird_abundance_did
+bird_richness_did
+
+```
+
+## 2. tree biodiversity did
+
+#### 2.0 import data
+```{r import}
+tree_data <- readRDS("../data/species count data/result.rds")
+```
+
+#### 2.1 import data
+```{r import tree}
+tree_data <- readRDS("../data/species count data/result.rds")
+```
+
+#### 2.2 merge data
+```{r merge tree}
+tree_data <- tree_data %>%
+  mutate(
+    STATECD = sprintf("%02d", STATECD),
+    COUNTYCD = sprintf("%03d", COUNTYCD),
+    fips = paste0(STATECD, COUNTYCD)
+  )
+
+tree_data_fips <- tree_data %>%
+  group_by(fips, MEASYEAR) %>%
+  summarize(
+    abundance = sum(county_count, na.rm = TRUE),
+    richness = n_distinct(SPCD)
+  ) %>%
+  ungroup()
+
+write.csv(tree_data_fips, "../output_data/tree_data.csv")
+
+n_distinct(tree_data_fips$fips) # 3114
+
+merge_tree_data <- tree_data_fips %>%
+  mutate(fips = as.integer(fips))
+
+merge_tree_data <- merge_tree_data %>%
+  mutate(fips = as.integer(fips)) %>%
+  left_join(mdp_data, by = "fips")
+
+# Since the publication year has no missing values, we want to delete the data that does not have a corresponding FIPS code.
+merge_tree_data <- merge_tree_data %>%
+  filter(!is.na(`Publication Year`))
+
+n_distinct(merge_tree_data$plant_id) # 211
+
+# create year_diff as x_axis
+
+merge_tree_data <- merge_tree_data %>%
+  mutate(`Publication Year` = as.integer(`Publication Year`),
+         MEASYEAR = as.integer(MEASYEAR),
+         year_diff = MEASYEAR - `Publication Year`) %>%
+  filter(year_diff >= -4 & year_diff <= 5)
+
+```
+
+#### 2.3 did plots
+
+```{r}
+merge_tree_data <- merge_tree_data %>%
+  mutate(log_abundance = log(abundance),
+         log_richness = log(richness))
+
+tree_abundance_did <- ggplot(merge_tree_data, aes(x = year_diff, y = log_abundance, color = as.factor(Winner))) +
+  geom_line(stat = "summary", fun = mean) +
+  labs(title = "Log Abundance over Time",
+       x = "Year Difference",
+       y = "Log Abundance",
+       color = "Winner") +
+  scale_x_continuous(breaks = seq(-4, 5, by = 1))+
+  theme_minimal()
+
+tree_richness_did <- ggplot(merge_tree_data, aes(x = year_diff, y = log_richness, color = as.factor(Winner))) +
+  geom_line(stat = "summary", fun = mean) +
+  labs(title = "Log Richness over Time",
+       x = "Year Difference",
+       y = "Log Richness",
+       color = "Winner") +
+  scale_x_continuous(breaks = seq(-4, 5, by = 1))+
+  theme_minimal()
+
+tree_abundance_did
+tree_richness_did
+
+```
