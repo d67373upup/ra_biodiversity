@@ -1,0 +1,108 @@
+---
+title: "centroids"
+author: "Zeyu Lou"
+date: "2024-07-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+rm(list=ls())
+
+library(sf)
+library(dplyr)
+library(readxl)
+library(stringr)
+
+getwd()
+centroids <- st_read("../data/shp_county_2010/mdp_county_centroid.gpkg")
+mdp_data <- read_excel("../output_data/MDP_1980_2008_updated.xlsx")
+```
+
+# 0 Data preparation
+
+```{r}
+# create fips in the centroids file
+centroids <- centroids %>%
+  mutate(fips = paste0(STATE, COUNTY))
+
+mdp_data <- mdp_data %>%
+  mutate(fips = str_pad(fips, width = 5, pad = "0"))
+
+# write.csv(mdp_data, "../output_data/MDP_1980_2008_updated.csv")
+
+mdp_data.cen = mdp_data %>%
+  left_join(centroids %>% select(fips, geom, LSAD), by="fips")
+# we find that one county might include multiple centroids and this might because of Municipalities/independent cities/Census-designated places
+
+mdp_data.check = mdp_data.cen %>%
+  group_by(fips) %>%
+  summarise(count = n()) %>%
+  filter(count > 1)
+
+mdp_data.check # we have 63 counties which have multiple centroid
+n_distinct(mdp_data.cen$fips)
+n_distinct(mdp_data.cen$geom)
+
+sum(is.na(mdp_data.cen$fips))
+sum(is.na(mdp_data.cen$geom))
+sum(is.na(centroids$fips))
+sum(is.na(centroids$geom))
+
+mdp_fips <- mdp_data.cen %>%
+  distinct(fips,geom)
+
+```
+
+# loop
+
+```{r}
+centroids <- centroids %>%
+  st_as_sf()
+
+mdp_fips <- st_as_sf(mdp_fips)
+
+n_distinct(mdp_fips$fips)
+
+distances <- st_distance(mdp_fips$geom, centroids$geom)
+distance_df <- as.data.frame(as.table(distances))
+
+sum(is.na(distance_df$Freq))
+sum(is.na(distance_df$Var1))
+sum(is.na(distance_df$Var2))
+n_distinct(distance_df$Var1)
+
+distance_geom <- distance_df %>%
+  mutate(
+    county_geom = mdp_fips$geom[Var1],
+    neighbor_county_geom = centroids$geom[Var2],
+    distance = as.numeric(units::set_units(Freq, "km"))
+  ) %>%
+  left_join(centroids, by = c("county_geom" = "geom")) %>%
+  rename(county = fips) %>%
+  left_join(centroids, by = c("neighbor_county_geom" = "geom")) %>%
+  rename(neighbor_county = fips) %>%
+  select(county, neighbor_county, county_geom, neighbor_county_geom, distance)
+
+
+distance_fips <- distance_geom %>%
+  filter(distance < 100,
+         county != neighbor_county) %>%
+  select(county, neighbor_county, distance)
+
+distance_fips.1 <- distance_geom %>%
+  filter(distance < 100) %>%
+  select(county, neighbor_county, distance)
+
+n_distinct(distance_fips$county)
+n_distinct(distance_fips.1$county)
+
+county <- setdiff(distance_fips.1$county, distance_fips$county) # 04013/06073
+county
+
+write.csv(distance_fips, "../output_data/mdp_centroid_100km")
+```
+

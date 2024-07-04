@@ -17,6 +17,7 @@ library('haven')
 library(readxl)
 library(dplyr)
 library(ggplot2)
+library(plm)
 ```
 
 ## 1. bird biodiversity did
@@ -24,7 +25,7 @@ library(ggplot2)
 #### 1.0 Import data
 ```{r import}
 mdp_data <- read_xlsx("../output_data/MDP_1980_2008_updated.xlsx")
-county_x_year_panel_data <- read.csv("../output_data//county_x_year_panel_data.csv")
+county_x_year_panel_data <- read.csv("../output_data/county_x_year_panel_data.csv")
 ```
 
 #### 1.1 merge the data
@@ -71,19 +72,23 @@ n_distinct(merged_mdp_data$plant_id) # 197. verified
 mdp_data_10yrs <- merged_mdp_data %>% # mdp_data_year
   mutate(`Publication Year` = as.integer(`Publication Year`),
          year = as.integer(year),
-         year_diff = year - `Publication Year`) %>%
+         year_diff = year - `Publication Year`,
+         post_treatment = ifelse(year_diff > 0, 1, 0),
+         winner_indicator = ifelse(Winner == 1, 1, 0),
+         runner_up_indicator = ifelse(Winner == 0, 1, 0)) %>%
   filter(year_diff >= -4 & year_diff <= 5)
 
 n_distinct(mdp_data_10yrs$plant_id) # 170
 
-mdp_data_10yrs <- mdp_data_10yrs %>%
-  group_by(plant_id) %>%
-  filter(n() == 10) %>%
-  ungroup()
+# mdp_data_10yrs <- mdp_data_10yrs %>%
+#   group_by(plant_id) %>%
+#   filter(n() == 10) %>%
+#   ungroup()
 
 n_distinct(mdp_data_10yrs$plant_id) # 85
 table(mdp_data_10yrs$Winner) # 0:490; 1:360
 ```
+
 
 #### 1.3 did plots
 
@@ -92,7 +97,54 @@ mdp_data_10yrs <- mdp_data_10yrs %>%
   mutate(log_abundance = log(abundance),
          log_richness = log(richness))
 
-bird_abundance_did <- ggplot(mdp_data_10yrs, aes(x = year_diff, y = log_abundance, color = as.factor(Winner))) +
+mdp_data_10yrs.1 <- pdata.frame(mdp_data_10yrs, index = c("County", "year"))
+
+formula_abundance <- log_abundance ~ winner_indicator * post_treatment + runner_up_indicator * post_treatment + factor(Number) + factor(County) + factor(year)
+formula_richness <- log_richness ~ winner_indicator * post_treatment + runner_up_indicator * post_treatment + factor(Number) + factor(County) + factor(year)
+
+model_abundance <- plm(formula_abundance, data = mdp_data_10yrs, model = "within")
+model_richness <- plm(formula_richness, data = mdp_data_10yrs, model = "within")
+
+summary(model_abundance)
+summary(model_richness)
+
+
+# 提取预测值
+mdp_data_10yrs$predicted_abundance <- predict(model_abundance)
+mdp_data_10yrs$predicted_richness <- predict(model_richness)
+
+# 提取残差
+mdp_data_10yrs$residuals_abundance <- residuals(model_abundance)
+mdp_data_10yrs$residuals_richness <- residuals(model_richness)
+
+# 计算每个年份和组别的平均值
+avg_data <- mdp_data_10yrs %>%
+  group_by(year_diff, winner_indicator) %>%
+  summarize(mean_abundance = mean(predicted_abundance, na.rm = TRUE),
+            mean_richness = mean(predicted_richness, na.rm = TRUE))
+
+avg_data$winner_indicator <- factor(avg_data$winner_indicator, levels = c(0, 1), labels = c("Runner-up", "Winner"))
+
+
+bird_abundance_did <- ggplot(avg_data, aes(x = year_diff, y = mean_abundance, color = winner_indicator, linetype = winner_indicator)) +
+  geom_line(size = 1) +
+  labs(title = "Bird Abundance (log)", x = "Year relative to plant opening year", y = "Log Abundance") +
+  scale_color_manual(values = c("Winner" = "blue", "Runner-up" = "orange")) +
+  scale_linetype_manual(values = c("Winner" = "solid", "Runner-up" = "dashed")) +
+  theme_minimal()
+
+bird_richness_did <- ggplot(avg_data, aes(x = year_diff, y = mean_richness, color = winner_indicator, linetype = winner_indicator)) +
+  geom_line(size = 1) +
+  labs(title = "Bird Richness (log)", x = "Year relative to plant opening year", y = "Log Richness") +
+  scale_color_manual(values = c("Winner" = "blue", "Runner-up" = "orange")) +
+  scale_linetype_manual(values = c("Winner" = "solid", "Runner-up" = "dashed")) +
+  theme_minimal()
+
+bird_abundance_did
+bird_richness_did
+
+# plots data visualization
+bird_abundance_visual <- ggplot(mdp_data_10yrs, aes(x = year_diff, y = log_abundance, color = as.factor(Winner))) +
   geom_line(stat = "summary", fun = mean) +
   labs(title = "Log Abundance over Time",
        x = "Year Difference",
@@ -101,7 +153,7 @@ bird_abundance_did <- ggplot(mdp_data_10yrs, aes(x = year_diff, y = log_abundanc
   scale_x_continuous(breaks = seq(-4, 5, by = 1))+
   theme_minimal()
 
-bird_richness_did <- ggplot(mdp_data_10yrs, aes(x = year_diff, y = log_richness, color = as.factor(Winner))) +
+bird_richness_visual <- ggplot(mdp_data_10yrs, aes(x = year_diff, y = log_richness, color = as.factor(Winner))) +
   geom_line(stat = "summary", fun = mean) +
   labs(title = "Log Richness over Time",
        x = "Year Difference",
@@ -110,8 +162,11 @@ bird_richness_did <- ggplot(mdp_data_10yrs, aes(x = year_diff, y = log_richness,
   scale_x_continuous(breaks = seq(-4, 5, by = 1))+
   theme_minimal()
 
-bird_abundance_did
-bird_richness_did
+bird_abundance_visual
+bird_richness_visual
+
+
+
 
 ```
 
@@ -120,6 +175,7 @@ bird_richness_did
 #### 2.1 import data
 ```{r import tree}
 # tree_data <- readRDS("../data/species count data/result.rds")
+# write.csv(tree_data, "../data/result.csv")
 ```
 
 #### 2.2 merge data
